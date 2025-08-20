@@ -29,7 +29,6 @@ public class JwtUtil {
 	@Value("${jwt.refresh-token-validity}")
 	private long refreshTokenValidity;
 
-	// SecretKey 생성 (최신 방식)
 	private SecretKey getSigningKey() {
 		return Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
 	}
