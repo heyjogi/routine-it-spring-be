@@ -9,8 +9,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import com.goormi.routine.domain.auth.repository.RedisRepository;
 import com.goormi.routine.domain.auth.service.JwtTokenProvider;
 import com.goormi.routine.domain.ranking.service.RankingService;
@@ -30,11 +30,11 @@ public class UserServiceTest {
 	private UserService userService;
 	@Autowired
 	private UserRepository userRepository;
-	@MockitoBean
+	@MockBean
 	private RedisRepository redisRepository;
-	@MockitoBean
+	@MockBean
 	private JwtTokenProvider jwtTokenProvider;
-	@MockitoBean
+	@MockBean
 	private RankingService rankingService;
 
 	private User testUser;
