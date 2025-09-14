@@ -57,7 +57,7 @@ public class SecurityConfig {
                 )
                 .successHandler(oAuth2SuccessHandler)
             )
-            .exceptionHandling(exceptions -> exceptions
+            .exceptionHandling(exception -> exception
                 .authenticationEntryPoint(customAuthenticationEntryPoint)
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
@@ -74,7 +74,12 @@ public class SecurityConfig {
             "http://localhost:5173",
             "http://54.180.93.1:3000",
             "http://54.180.93.1:8080",
-            "https://petstore.swagger.io"
+            "https://petstore.swagger.io",
+            "http://routine-it-frontend-1757331119.s3-website.ap-northeast-2.amazonaws.com/",
+            "https://d17wq6hjjpeoqd.cloudfront.net/",
+            "http://15.164.98.221:8080",
+            "http://15.164.98.221:3000"
+
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
