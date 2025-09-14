@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,11 +27,12 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
       JOIN UserActivity ua ON gm.user.id = ua.user.id
       WHERE gm.group.groupId = :groupId
         AND gm.status = 'JOINED'
-        AND ua.activityType = 'ROUTINE_AUTH'
-        AND FUNCTION('DATE_FORMAT', ua.createdAt, '%Y-%m') = :monthYear
+        AND ua.activityType = 'GROUP_AUTH_COMPLETE'
+        AND YEAR(ua.createdAt) = :year
+        AND MONTH(ua.createdAt) = :month
       """)
     int countActiveByGroupId(@Param("groupId") Long groupId,
-      @Param("monthYear") String monthYear);
+        @Param("year") int year, @Param("month") int month);
 
     @Query("""
       SELECT COUNT(ua)
@@ -40,11 +40,12 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
       JOIN GroupMember gm ON ua.user.id = gm.user.id
       WHERE gm.group.groupId = :groupId
         AND gm.status = 'JOINED'
-        AND ua.activityType = 'ROUTINE_AUTH'
-        AND FUNCTION('DATE_FORMAT', ua.createdAt, '%Y-%m') = :monthYear
+        AND ua.activityType = 'GROUP_AUTH_COMPLETE'
+        AND YEAR(ua.createdAt) = :year
+        AND MONTH(ua.createdAt) = :month
       """)
     int countAuthByGroupId(@Param("groupId") Long groupId,
-      @Param("monthYear") String monthYear);
+        @Param("year") int year, @Param("month") int month);
 
     @Query("SELECT gm FROM GroupMember gm WHERE gm.user.id = :userId AND gm.status = 'JOINED'")
     List<GroupMember> findActiveGroupsByUserId(@Param("userId") Long userId);

@@ -104,8 +104,13 @@ public class RankingServiceImpl implements RankingService {
 				Group group = scoreData.getGroup();
 
 				int memberCount = groupMemberRepository.countMembersByGroupId(groupId);
-				int activeMembers = groupMemberRepository.countActiveByGroupId(groupId, monthYear);
-				int totalAuthCount = groupMemberRepository.countAuthByGroupId(groupId, monthYear);
+
+				String[] parts = monthYear.split("-");
+				int year = Integer.parseInt(parts[0]);
+				int month = Integer.parseInt(parts[1]);
+
+				int activeMembers = groupMemberRepository.countActiveByGroupId(groupId, year, month);
+				int totalAuthCount = groupMemberRepository.countAuthByGroupId(groupId, year, month);
 
 				double participationRate = memberCount > 0 ? (double)activeMembers / memberCount : 0.0;
 				double averageAuthPerMember = memberCount > 0 ? (double)totalAuthCount / memberCount : 0.0;
@@ -414,16 +419,21 @@ public class RankingServiceImpl implements RankingService {
 		}
 		return 0;
 	}
-
-	private int calculateGroupMembersTotalScore(Long groupId) {
-		List<Ranking> memberRankings = rankingRepository.findAllUsersByGroupIdOrderByScore(groupId);
-		return memberRankings.stream().mapToInt(Ranking::getScore).sum();
-	}
+	//
+	// private int calculateGroupMembersTotalScore(Long groupId) {
+	// 	List<Ranking> memberRankings = rankingRepository.findAllUsersByGroupIdOrderByScore(groupId);
+	// 	return memberRankings.stream().mapToInt(Ranking::getScore).sum();
+	// }
 
 	private int calculateSimpleParticipationBonus(Long groupId, String monthYear) {
 		try {
 			int memberCount = groupMemberRepository.countMembersByGroupId(groupId);
-			int activeMembers = groupMemberRepository.countActiveByGroupId(groupId, monthYear);
+
+			String[] parts = monthYear.split("-");
+			int year = Integer.parseInt(parts[0]);
+			int month = Integer.parseInt(parts[1]);
+
+			int activeMembers = groupMemberRepository.countActiveByGroupId(groupId, year, month);
 
 			if (memberCount == 0) {
 				log.debug("그룹 {} 멤버 수가 0명이므로 보너스 0점", groupId);

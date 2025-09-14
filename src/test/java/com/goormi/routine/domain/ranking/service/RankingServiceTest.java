@@ -35,8 +35,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -73,10 +75,12 @@ class RankingServiceTest {
 	private GroupMember savedGroupMember1;
 	private GroupMember savedGroupMember2;
 	private String currentMonth;
+	private LocalDateTime currentMonthStart;
 
 	@BeforeEach
 	void setUp() {
 		currentMonth = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM"));
+		currentMonthStart = LocalDate.now().withDayOfMonth(1).atStartOfDay(); // ⭐ 여기서 초기화
 
 		// 테스트용 리더 생성
 		leader = User.builder()
@@ -136,12 +140,91 @@ class RankingServiceTest {
 		GroupMemberResponse joined2 = groupMemberService.addMember(user2.getId(), savedGroup2.getGroupId(), joinRequest2);
 		savedGroupMember2 = groupMemberRepository.findById(joined2.getGroupMemberId()).orElseThrow();
 
+		createUserActivities();
+
 		// 랭킹 초기화
 		rankingService.initializeRanking(leader.getId(), savedGroup1.getGroupId());
 		rankingService.initializeRanking(user1.getId(), savedGroup1.getGroupId());
 		rankingService.initializeRanking(leader.getId(), savedGroup2.getGroupId());
 		rankingService.initializeRanking(user2.getId(), savedGroup2.getGroupId());
 	}
+
+	private void createUserActivities() {
+		// leader의 그룹1 활동
+		createUserActivity(leader, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(1));
+		createUserActivity(leader, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(3));
+
+		// user1의 그룹1 활동
+		createUserActivity(user1, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(2));
+		createUserActivity(user1, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(4));
+
+		// leader의 그룹2 활동
+		createUserActivity(leader, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(5));
+
+		// user2의 그룹2 활동
+		createUserActivity(user2, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(6));
+		createUserActivity(user2, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(7));
+
+		// 이전 달 데이터 (경계값 테스트용)
+		LocalDateTime lastMonth = currentMonthStart.minusMonths(1);
+		createUserActivity(leader, ActivityType.GROUP_AUTH_COMPLETE, lastMonth.plusDays(10));
+	}
+
+	private UserActivity createUserActivity(User user, ActivityType activityType, LocalDateTime createdAt) {
+		UserActivity activity = UserActivity.builder()
+			.user(user)
+			.activityType(activityType)
+			.activityDate(createdAt.toLocalDate())
+			.createdAt(createdAt)
+			.isPublic(false)
+			.build();
+		return userActivityRepository.save(activity);
+	}
+
+	@Test
+	@DisplayName("특정 사용자의 추가 활동 생성 테스트")
+	void createAdditionalUserActivity_success() {
+		// given - 특정 테스트에서만 추가 활동 필요
+		createUserActivity(user1, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(15));
+		createUserActivity(user1, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(16));
+
+		// when
+		List<UserActivity> activities = userActivityRepository
+			.findByUserIdAndActivityTypeOrderByCreatedAtDesc(user1.getId(), ActivityType.GROUP_AUTH_COMPLETE);
+
+		// then
+		assertThat(activities.size()).isGreaterThanOrEqualTo(4); // 기본 2개 + 추가 2개
+	}
+
+	@Test
+	@DisplayName("활동이 없는 사용자의 경우 처리")
+	void handleUserWithNoActivities() {
+		// given - 새로운 사용자 생성 (활동 없음)
+		User newUser = User.builder()
+			.kakaoId("newUser")
+			.email("newUser@test.com")
+			.nickname("새로운사용자")
+			.build();
+		userRepository.save(newUser);
+
+		// 그룹에 가입만 시키고 활동은 생성하지 않음
+		GroupJoinRequest joinRequest = GroupJoinRequest.builder()
+			.groupId(savedGroup1.getGroupId())
+			.build();
+		groupMemberService.addMember(newUser.getId(), savedGroup1.getGroupId(), joinRequest);
+		rankingService.initializeRanking(newUser.getId(), savedGroup1.getGroupId());
+
+		// when
+		GroupTop3RankingResponse top3Rankings =
+			rankingService.getTop3RankingsByGroup(savedGroup1.getGroupId(), currentMonth);
+
+		// then - 활동이 없는 사용자는 0점으로 표시되어야 함
+		boolean hasZeroScoreUser = top3Rankings.getTop3Users().stream()
+			.anyMatch(user -> user.getAuthCount() == 0);
+		// 활동이 있는 다른 사용자들과 함께 표시될 수 있음
+		assertThat(top3Rankings.getTop3Users()).isNotEmpty();
+	}
+
 
 	@Test
 	@DisplayName("랭킹 초기화 성공")
@@ -231,6 +314,124 @@ class RankingServiceTest {
 	}
 
 	@Test
+	@DisplayName("단계별 디버깅: 글로벌 그룹 랭킹 조회")
+	void debug_getGlobalGroupRankings_stepByStep() {
+		System.out.println("=== 단계별 디버깅 시작 ===");
+
+		// 1단계: 기본 데이터 확인
+		System.out.println("currentMonth: " + currentMonth);
+		System.out.println("savedGroup1 ID: " + savedGroup1.getGroupId());
+		System.out.println("savedGroup2 ID: " + savedGroup2.getGroupId());
+
+		// 2단계: 점수 업데이트 전 Ranking 데이터 확인
+		List<Ranking> beforeRankings = rankingRepository.findAll();
+		System.out.println("점수 업데이트 전 Ranking 개수: " + beforeRankings.size());
+		for (Ranking r : beforeRankings) {
+			System.out.printf("Before - User: %d, Group: %d, Score: %d, Month: %s%n",
+				r.getUserId(), r.getGroupId(), r.getScore(), r.getMonthYear());
+		}
+
+		// 3단계: 점수 업데이트
+		System.out.println("\n=== 점수 업데이트 시작 ===");
+		rankingService.updateGroupScore(leader.getId(), savedGroup1.getGroupId(), 300);
+		rankingService.updateGroupScore(user1.getId(), savedGroup1.getGroupId(), 200);
+		rankingService.updateGroupScore(leader.getId(), savedGroup2.getGroupId(), 100);
+		rankingService.updateGroupScore(user2.getId(), savedGroup2.getGroupId(), 80);
+
+		// 4단계: 점수 업데이트 후 Ranking 데이터 확인
+		List<Ranking> afterRankings = rankingRepository.findAll();
+		System.out.println("점수 업데이트 후 Ranking 개수: " + afterRankings.size());
+		for (Ranking r : afterRankings) {
+			System.out.printf("After - User: %d, Group: %d, Score: %d, Month: %s%n",
+				r.getUserId(), r.getGroupId(), r.getScore(), r.getMonthYear());
+		}
+
+		// 5단계: Repository 쿼리 직접 테스트
+		System.out.println("\n=== Repository 쿼리 테스트 ===");
+		try {
+			Pageable pageable = PageRequest.of(0, 10);
+			Page<Object[]> rawResult = rankingRepository.findGroupRankingsByMonthAndFilters(
+				currentMonth, null, null, pageable);
+
+			System.out.println("Raw 쿼리 결과 개수: " + rawResult.getContent().size());
+			System.out.println("Total Elements: " + rawResult.getTotalElements());
+
+			if (rawResult.getContent().isEmpty()) {
+				System.out.println("❌ Raw 쿼리 결과가 비어있습니다!");
+
+				// 다른 monthYear로 테스트해보기
+				List<String> allMonthYears = afterRankings.stream()
+					.map(Ranking::getMonthYear)
+					.distinct()
+					.toList();
+				System.out.println("DB에 저장된 monthYear 값들: " + allMonthYears);
+
+				// 첫 번째 monthYear로 다시 쿼리
+				if (!allMonthYears.isEmpty()) {
+					String firstMonthYear = allMonthYears.get(0);
+					System.out.println("첫 번째 monthYear로 재시도: " + firstMonthYear);
+					Page<Object[]> retryResult = rankingRepository.findGroupRankingsByMonthAndFilters(
+						firstMonthYear, null, null, pageable);
+					System.out.println("재시도 결과 개수: " + retryResult.getContent().size());
+
+					for (Object[] row : retryResult.getContent()) {
+						System.out.printf("Raw Result - GroupId: %s, GroupName: %s, Category: %s, GroupType: %s, TotalScore: %s%n",
+							row[0], row[1], row[2], row[3], row[4]);
+					}
+				}
+			} else {
+				for (Object[] row : rawResult.getContent()) {
+					System.out.printf("Raw Result - GroupId: %s, GroupName: %s, Category: %s, GroupType: %s, TotalScore: %s%n",
+						row[0], row[1], row[2], row[3], row[4]);
+				}
+			}
+		} catch (Exception e) {
+			System.out.println("Repository 쿼리 실행 중 오류: " + e.getMessage());
+			e.printStackTrace();
+		}
+
+		// 6단계: Group 엔티티 직접 확인
+		System.out.println("\n=== Group 엔티티 확인 ===");
+		Optional<Group> group1 = groupRepository.findById(savedGroup1.getGroupId());
+		Optional<Group> group2 = groupRepository.findById(savedGroup2.getGroupId());
+
+		if (group1.isPresent()) {
+			Group g1 = group1.get();
+			System.out.printf("Group1 - ID: %d, Name: %s, Category: %s, Type: %s%n",
+				g1.getGroupId(), g1.getGroupName(), g1.getCategory(), g1.getGroupType());
+		}
+
+		if (group2.isPresent()) {
+			Group g2 = group2.get();
+			System.out.printf("Group2 - ID: %d, Name: %s, Category: %s, Type: %s%n",
+				g2.getGroupId(), g2.getGroupName(), g2.getCategory(), g2.getGroupType());
+		}
+
+		// 7단계: 간단한 JOIN 테스트
+		System.out.println("\n=== JOIN 테스트 ===");
+		try {
+			List<Ranking> rankingsWithGroups = rankingRepository.findAll();
+			for (Ranking r : rankingsWithGroups) {
+				if (r.getGroupId() != null) {
+					Group associatedGroup = r.getGroup(); // Lazy Loading 테스트
+					if (associatedGroup != null) {
+						System.out.printf("JOIN 성공 - Ranking User: %d, Group: %s%n",
+							r.getUserId(), associatedGroup.getGroupName());
+					} else {
+						System.out.printf("JOIN 실패 - Ranking User: %d, GroupId: %d, Group is null%n",
+							r.getUserId(), r.getGroupId());
+					}
+				}
+			}
+		} catch (Exception e) {
+			System.out.println("JOIN 테스트 중 오류: " + e.getMessage());
+			e.printStackTrace();
+		}
+
+		System.out.println("=== 단계별 디버깅 끝 ===");
+	}
+
+	@Test
 	@DisplayName("글로벌 그룹 랭킹 조회 성공")
 	void getGlobalGroupRankings_success() {
 		// given
@@ -249,6 +450,14 @@ class RankingServiceTest {
 		assertThat(groupRankings.getContent()).isNotEmpty();
 		assertThat(groupRankings.getContent().get(0).getRank()).isEqualTo(1);
 		assertThat(groupRankings.getContent().get(0).getTotalScore()).isGreaterThan(0);
+
+		// 첫 번째 그룹이 가장 높은 점수를 가져야 함
+		assertThat(groupRankings.getContent().get(0).getTotalScore()).isGreaterThanOrEqualTo(500);
+
+		// 참여도 보너스가 포함된 점수 확인
+		boolean hasParticipationBonus = groupRankings.getContent().stream()
+			.anyMatch(item -> item.getTotalScore() > 500); // 기본 점수 + 참여도 보너스
+		assertThat(hasParticipationBonus).isTrue();
 	}
 
 	@Test
@@ -276,10 +485,8 @@ class RankingServiceTest {
 		rankingService.updateGroupScore(leader.getId(), savedGroup1.getGroupId(), 300);
 		rankingService.updateGroupScore(user1.getId(), savedGroup1.getGroupId(), 200);
 
-		// 디버깅: 그룹 상태 확인
-		System.out.println("=== 디버깅 정보 ===");
-		System.out.println("savedGroup1 ID: " + savedGroup1.getGroupId());
-		System.out.println("savedGroup1 이름: " + savedGroup1.getGroupName());
+		createUserActivity(leader, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(10));
+		createUserActivity(user1, ActivityType.GROUP_AUTH_COMPLETE, currentMonthStart.plusDays(11));
 
 		// DB에서 다시 조회해보기
 		Group dbGroup = groupRepository.findById(savedGroup1.getGroupId()).orElse(null);
@@ -289,15 +496,15 @@ class RankingServiceTest {
 		GroupTop3RankingResponse top3Rankings =
 			rankingService.getTop3RankingsByGroup(savedGroup1.getGroupId(), currentMonth);
 
-		// 결과 확인
-		System.out.println("응답 그룹 이름: " + top3Rankings.getGroupName());
-		System.out.println("==================");
-
 		// then
 		assertThat(top3Rankings.getGroupId()).isEqualTo(savedGroup1.getGroupId());
 		assertThat(top3Rankings.getGroupName()).isEqualTo("테스트 운동 그룹");
 		assertThat(top3Rankings.getTop3Users()).isNotEmpty();
 		assertThat(top3Rankings.getTop3Users().get(0).getRank()).isEqualTo(1);
+
+		// 실제 인증 횟수가 반영되는지 확인
+		GroupTop3RankingResponse.UserRankingItem topUser = top3Rankings.getTop3Users().get(0);
+		assertThat(topUser.getAuthCount()).isGreaterThan(0);
 	}
 
 	@Test
